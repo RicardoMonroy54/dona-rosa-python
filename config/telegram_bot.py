@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from database import SessionLocal
 from service.producto_service import ProductoService
@@ -9,45 +9,103 @@ from service.producto_service import ProductoService
 service = ProductoService()
 
 
+def menu_teclado():
+    teclado = [
+        ["💾 /agregar", "✏️ /actualizar"],
+        ["❌ /eliminar", "👁️ /productos"],
+        ["💲 /valor", "🚨 /stockbajo"]
+    ]
+    return ReplyKeyboardMarkup(teclado, resize_keyboard=True)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     respuesta = (
-        "Bienvenido al Inventario de Dona Rosa\n\n"
-        "Comandos disponibles:\n"
-        "/productos\n"
-        "/valor\n"
-        "/stockbajo\n"
-        "/agregar codigo nombre precio cantidad\n"
-        "/actualizar nombre cantidad\n"
-        "/eliminar nombre"
+        "🛒 *Bienvenido al Inventario de Doña Rosa*\n\n"
+        "Seleccione una opción del menú:\n\n"
+        "💾 /agregar codigo nombre precio cantidad\n"
+        "✏️ /actualizar nombre cantidad\n"
+        "❌ /eliminar nombre\n"
+        "👁️ /productos\n"
+        "💲 /valor\n"
+        "🚨 /stockbajo"
     )
-    await update.message.reply_text(respuesta)
+    await update.message.reply_text(
+        respuesta,
+        parse_mode="Markdown",
+        reply_markup=menu_teclado()
+    )
 
 
 async def productos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
-        respuesta = service.obtener_inventario_telegram(db)
+        productos_lista = service.obtener_productos(db)
+        if not productos_lista:
+            respuesta = "📦 No hay productos en el inventario."
+        else:
+            respuesta = "🛒🍇🥑 *PRODUCTOS* 🛒\n\n"
+            for p in productos_lista:
+                alerta = " ⚠️" if p.stock_critico() else ""
+                respuesta += (
+                    f"🛒 *{p.nombre}*{alerta}\n"
+                    f"   Cantidad: {p.cantidad}\n"
+                    f"   Precio: ${p.precio}\n"
+                    f"   Total: ${p.precio * p.cantidad}\n\n"
+                )
     finally:
         db.close()
-    await update.message.reply_text(respuesta)
+    await update.message.reply_text(
+        respuesta,
+        parse_mode="Markdown",
+        reply_markup=menu_teclado()
+    )
 
 
 async def valor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
-        total = service.valor_total_inventario(db)
+        productos_lista = service.obtener_productos(db)
+        total_general = service.valor_total_inventario(db)
+
+        if not productos_lista:
+            respuesta = "📦 No hay productos en el inventario."
+        else:
+            respuesta = "💲 *Valor del Inventario*\n\n"
+            for p in productos_lista:
+                subtotal = p.precio * p.cantidad
+                respuesta += (
+                    f"🛒 *{p.nombre}*\n"
+                    f"   Cantidad: {p.cantidad} | Precio: ${p.precio}\n"
+                    f"   Subtotal: ${subtotal}\n\n"
+                )
+            respuesta += "━━━━━━━━━━━━━━━━━━\n"
+            respuesta += f"💰 *Total general: ${total_general}*"
     finally:
         db.close()
-    await update.message.reply_text(f"Valor total inventario: ${total}")
+    await update.message.reply_text(
+        respuesta,
+        parse_mode="Markdown",
+        reply_markup=menu_teclado()
+    )
 
 
 async def stockbajo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     try:
-        respuesta = service.obtener_stock_bajo_telegram(db)
+        bajos = service.obtener_productos_stock_bajo(db)
+        if not bajos:
+            respuesta = "✅ No hay productos con stock bajo."
+        else:
+            respuesta = "🚨 *Productos por agotarse:*\n\n"
+            for p in bajos:
+                respuesta += f"⚠️ *{p.nombre}*\n   Cantidad: {p.cantidad}\n\n"
     finally:
         db.close()
-    await update.message.reply_text(respuesta)
+    await update.message.reply_text(
+        respuesta,
+        parse_mode="Markdown",
+        reply_markup=menu_teclado()
+    )
 
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,7 +115,10 @@ async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         respuesta = service.agregar_producto_telegram(db, comando)
     finally:
         db.close()
-    await update.message.reply_text(respuesta)
+    await update.message.reply_text(
+        f"💾 {respuesta}",
+        reply_markup=menu_teclado()
+    )
 
 
 async def actualizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -67,7 +128,10 @@ async def actualizar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         respuesta = service.actualizar_producto_telegram(db, comando)
     finally:
         db.close()
-    await update.message.reply_text(respuesta)
+    await update.message.reply_text(
+        f"✏️ {respuesta}",
+        reply_markup=menu_teclado()
+    )
 
 
 async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -77,7 +141,10 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         respuesta = service.eliminar_producto_telegram(db, comando)
     finally:
         db.close()
-    await update.message.reply_text(respuesta)
+    await update.message.reply_text(
+        f"❌ {respuesta}",
+        reply_markup=menu_teclado()
+    )
 
 
 def iniciar_bot():
